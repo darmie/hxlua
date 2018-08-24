@@ -1,0 +1,12 @@
+{
+    "name": "hxlua",
+    "url" : "https://github.com/darmie/hxlua/",
+    "license": "MIT",
+    "tags": ["cross", "lua", "vm"],
+    "description": "Lua virtual machine for the Haxe runtime.",
+    "version": "0.0.1",
+    "classPath": "src/",
+    "releasenote": "Initial release, everything is working correctly.",
+    "contributors": ["darmie"],
+    "dependencies": {}
+  }
