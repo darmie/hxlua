@@ -35,6 +35,16 @@ class Scanner {
 
     static function writeChar(buf:StringBuf, c:Int) buf.addChar(c);
 
+    static function isDecimal(ch:Int):Bool { return '0'.charCodeAt(0) <= ch && ch <= '9'.charCodeAt(0); }
+
+    static function isIdent(ch:Int, pos:Int):Bool {
+        return ch == '_'.charCodeAt(0) || 'A'.charCodeAt(0) <= ch && ch <= 'Z'.charCodeAt(0) || 'a'.charCodeAt(0) <= ch && ch <= 'z'.charCodeAt(0) || isDecimal(ch) && pos > 0;
+    }
+
+    static function isDigit(ch:Int):Bool {
+        return '0'.charCodeAt(0) <= ch && ch <= '9'.charCodeAt(0) || 'a'.charCodeAt(0) <= ch && ch <= 'f'.charCodeAt(0) || 'A'.charCodeAt(0) <= ch && ch <= 'F'.charCodeAt(0);
+    }
+
     public function tokenError(tok:Token, msg:String):Error {
         return new Error({
             token: tok.str,
@@ -349,7 +359,7 @@ class Scanner {
      * @param lexer 
      * @return Token
      */
-    public function scan(lexer:Lexer):Token {
+    public function scan(lexer:Lexer):{token:Token, err:Error} {
         var tok:Token = new Token({
             type: null,
             str: null,
@@ -357,7 +367,161 @@ class Scanner {
             name: null
         });
 
-        return tok;
+        var newline = false;
+        var err:Error;
+
+        var ch = skipWhiteSpace(Whitespace1);
+
+        if (ch == '\n'.charCodeAt(0) || ch == '\r'.charCodeAt(0)) {
+            newline = true;
+            ch = skipWhiteSpace(Whitespace2);
+        }
+
+        if(ch == '('.charCodeAt(0) && lexer.prevTokenType == ')'.charCodeAt(0)) {
+            lexer.pNewLine = newline;
+        } else {
+            lexer.pNewLine = false;
+        }
+
+        var buf = new StringBuf();
+        tok.pos = this.pos;
+
+        switch true {
+
+            case isIdent(ch, 0) => r: {
+                tok.type = TIdent;
+                err = scanIdent(ch, buf);
+                tok.str = buf.toString();
+
+                if(err != null){
+                    tok.name = Parser.tokenName(tok.type);
+                    return {token:tok, err:err};
+                }
+                
+                if(reservedWords.exists(tok.str)){
+                    tok.type = reservedWords.get(tok.str);
+                }
+            }
+
+            case isDecimal(ch) => r: {
+                tok.type = TNumber;
+                err = scanNumber(ch, buf);
+                tok.str = buf.toString();
+            }
+
+            default: {
+                switch ch {
+                    case EOF: {
+                        tok.type = EOF;
+                    }
+                    case 45:{
+                        if(peek() == "-".charCodeAt(0)){
+                            err = skipComments(next());
+                            if(err != null){
+                                tok.name = Parser.tokenName(tok.type);
+                                return {token:tok, err:err};
+                            }
+
+                            return this.scan(lexer);
+                        } else {
+                            tok.type = ch;
+                            tok.str = String.fromCharCode(ch);
+                        }
+                    }
+                    case 34 | 39 : {
+                        tok.type = TString;
+                        err = scanString(ch, buf);
+                        tok.str = buf.toString();
+                    }
+                    case 91 : {
+                        var c = peek();
+                        if (c == '['.charCodeAt(0) || c == '='.charCodeAt(0)) {
+                            tok.type = TString;
+                            err = scanMultilineString(next(), buf);
+                            tok.str = buf.toString();
+                        } else {
+                            tok.type = ch;
+                            tok.str = String.fromCharCode(ch);
+                        }                        
+                    }
+                    case 61 : {
+                        if (peek() == 61) {
+                            tok.type = TEqeq;
+                            tok.str = "==";
+                            next();
+                        } else {
+                            tok.type = ch;
+                            tok.str = String.fromCharCode(ch);
+                        }                        
+                    }
+                    case 126 : {
+                        if (peek() == '='.charCodeAt(0)) {
+                            tok.type = TNeq;
+                            tok.str = "~=";
+                            next();
+                        } else {
+                            err = error("~", "Invalid '~' token");
+                        }
+                    }
+                    case 60 : {
+                        if (peek() == '='.charCodeAt(0)) {
+                            tok.type = TLte;
+                            tok.str = "<=";
+                            next();
+                        } else {
+                            tok.type = ch;
+                            tok.str = String.fromCharCode(ch);
+                        }
+                    }
+                    case 62 : {
+                        if (peek() == '='.charCodeAt(0)) {
+                            tok.type = TGte;
+                            tok.str = ">=";
+                            next();
+                        } else {
+                            tok.type = ch;
+                            tok.str = String.fromCharCode(ch);
+                        }                        
+                    }
+                    case 46 : {
+                        var ch2 = peek();
+
+                        if (isDecimal(ch2)) {
+                            tok.type = TNumber;
+                            err = scanNumber(ch, buf);
+                            tok.str = buf.toString();                             
+                        } else if(ch2 == '.'.charCodeAt(0)){
+                            writeChar(buf, ch);
+                            writeChar(buf, next());
+                            if (peek() == '.'.charCodeAt(0)) {
+                                writeChar(buf, next());
+                                tok.type = T3Comma;
+                            } else {
+                                tok.type = T2Comma;
+                            }                            
+                        } else {
+                            tok.type = '.'.charCodeAt(0);
+                        }
+                        tok.str = buf.toString();
+                    }
+                    //  '+', '*', '/', '%', '^', '#', '(', ')', '{', '}', ']', ';', ':', ','
+                    case 43 | 42 | 47 | 37 | 94 | 35 | 40 | 41 | 123 | 125 | 93 | 59 | 58 | 44 : {
+                        tok.type = ch;
+                        tok.str = String.fromCharCode(ch);
+                    }
+                    default: {
+                        writeChar(buf, ch);
+                        var err = error(buf.toString(), "Invalid token");
+                        tok.name = Parser.tokenName(tok.type);
+                        return {token:tok, err:err};
+                    }
+                }
+            }
+        }
+        
+
+        return {token:tok, err:err};
+            
     }
 
 

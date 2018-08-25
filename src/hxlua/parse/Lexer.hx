@@ -1,5 +1,6 @@
 package hxlua.parse;
 
+import hxlua.parse.Parser.YYLexer;
 import haxe.display.JsonModuleTypes.JsonTodo;
 import hxlua.parse.Parser.YYSymType;
 import hxlua.ast.*;
@@ -13,7 +14,7 @@ typedef TLexer = {
 	prevTokenType:Int,   
 }
 
-class Lexer {
+class Lexer implements YYLexer{
 	public var scanner:Scanner;
 	public var stmts:Array<Stmt>;
 	public var pNewLine:Bool;
@@ -34,7 +35,13 @@ class Lexer {
         var tok:Token = null;
 
         try {
-            tok = this.scanner.scan(this);
+            var scan = this.scanner.scan(this);
+            tok = scan.token;
+
+            if(scan.err != null){
+                throw scan.err;
+            }
+
         } catch(e:Dynamic){
             throw e;
         }
